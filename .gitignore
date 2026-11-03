@@ -1,0 +1,7 @@
+target/
+node/
+frontend/node_modules/
+*.tar
+.env
+.DS_Store
+.idea/
