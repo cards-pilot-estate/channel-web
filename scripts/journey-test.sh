@@ -4,7 +4,9 @@
 # from otp-service's test hook (dev only) through a port-forward, as a tester reads the simulated phone.
 set -uo pipefail
 ENV="${1:-dev}"
-WEB="http://web.$ENV.localtest.me"
+WEB="${WEB_URL:-https://web.$ENV.localtest.me}"
+CA="${CA_CERT:-$HOME/.cards-pilot/cards-local-ca.crt}"
+CURL_TLS=(); [ -f "$CA" ] && CURL_TLS=(--cacert "$CA")
 JAR=$(mktemp); trap 'rm -f "$JAR"; kill $PF 2>/dev/null' EXIT
 MOBILE="9$(printf '%09d' $((RANDOM * 30000 + RANDOM)))"
 PAN="ABCPJ$(printf '%04d' $((RANDOM % 10000)))Q"
@@ -13,9 +15,9 @@ check() { if [ "$2" = "$3" ]; then echo "PASS  $1 ($3)"; else echo "FAIL  $1: ex
 xsrf() { awk '$6=="XSRF-TOKEN"{print $7}' "$JAR" | tail -1; }
 req() {  # method path [json] -> prints body, then status on the last line
   local m=$1 p=$2 d=${3:-}
-  if [ -n "$d" ]; then curl -s -b "$JAR" -c "$JAR" -X "$m" "$WEB$p" -H "X-XSRF-TOKEN: $(xsrf)" -H 'Content-Type: application/json' \
+  if [ -n "$d" ]; then curl -s "${CURL_TLS[@]}" -b "$JAR" -c "$JAR" -X "$m" "$WEB$p" -H "X-XSRF-TOKEN: $(xsrf)" -H 'Content-Type: application/json' \
       ${IFMATCH:+-H "If-Match: $IFMATCH"} -d "$d" -w '\n%{http_code}'
-  else curl -s -b "$JAR" -c "$JAR" -X "$m" "$WEB$p" -H "X-XSRF-TOKEN: $(xsrf)" -w '\n%{http_code}'; fi
+  else curl -s "${CURL_TLS[@]}" -b "$JAR" -c "$JAR" -X "$m" "$WEB$p" -H "X-XSRF-TOKEN: $(xsrf)" -w '\n%{http_code}'; fi
 }
 code() { tail -1 <<<"$1"; }
 field() { sed '$d' <<<"$1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d$2)" 2>/dev/null; }
@@ -24,8 +26,11 @@ kubectl -n "comms-$ENV" port-forward svc/otp-service 18092:8080 >/dev/null 2>&1 
 sleep 2
 
 R=$(req GET /bff/session); check "the session starts anonymous" 200 "$(code "$R")"
-check "the page is served" 200 "$(curl -s -o /dev/null -w '%{http_code}' "$WEB/")"
+check "the page is served" 200 "$(curl -s "${CURL_TLS[@]}" -o /dev/null -w '%{http_code}' "$WEB/")"
+check "plain HTTP redirects to HTTPS" 301 "$(curl -s -o /dev/null -w '%{http_code}' "http://web.$ENV.localtest.me/")"
 R=$(req POST /bff/auth/otp/send "{\"mobile\":\"$MOBILE\"}"); check "a code is sent through the gateway" 202 "$(code "$R")"
+# Netscape jar: field 4 is "secure". Behind TLS the session cookie is __Host- and Secure.
+check "the session cookie is __Host- and Secure" yes "$(awk '$6=="__Host-WEB_SESSION" && $4=="TRUE"{f=1} END{print f?"yes":"no"}' "$JAR" 2>/dev/null; [ -z "${CURL_TLS[*]}" ] && true)"
 OTP=$(curl -s "http://127.0.0.1:18092/sim-admin/v1/test/last-code?msisdn=%2B91$MOBILE" | python3 -c 'import sys,json; print(json.load(sys.stdin)["code"])')
 R=$(req POST /bff/auth/otp/verify '{"code":"000000"}'); [ "$OTP" = 000000 ] || check "a wrong code is refused" 422 "$(code "$R")"
 R=$(req POST /bff/auth/otp/verify "{\"code\":\"$OTP\"}"); check "the right code signs the customer in" 200 "$(code "$R")"

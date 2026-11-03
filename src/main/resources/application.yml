@@ -30,6 +30,9 @@ spring:
             token-uri: ${IAM_TOKEN_URI:http://iam.localtest.me/realms/cards/protocol/openid-connect/token}
 server:
   shutdown: graceful
+  # TLS ends at the ingress: trust its X-Forwarded-Proto (Tomcat's default internal-proxy ranges), so
+  # the BFF knows the request was HTTPS (Secure cookies, HSTS).
+  forward-headers-strategy: native
   servlet:
     session:
       cookie:

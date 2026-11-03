@@ -11,7 +11,11 @@ gateway:
   apiHost: api.dev.localtest.me
 iam:
   tokenUri: http://keycloak.iam.svc.cluster.local:8080/realms/cards/protocol/openid-connect/token
-secureCookies: false     # true once the ingress serves TLS (WG.06)
+# HTTPS at the ingress with a cert-manager certificate (WG.06): the local CA on kind, Let's Encrypt in the cloud.
+tls:
+  enabled: false
+  clusterIssuer: cards-local-ca
+secureCookies: false     # true with TLS: cookies become __Host- and Secure
 # Secret with keys client-secret, customer-key-secret, draft-key, db-password (make secrets ENV=<env>).
 secretName: channel-web-secrets
 javaOpts: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -Xss512k"

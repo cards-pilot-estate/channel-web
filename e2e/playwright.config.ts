@@ -11,7 +11,9 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'report' }]],
   globalSetup: './global-setup.ts',
   use: {
-    baseURL: process.env.WEB_URL ?? 'http://web.dev.localtest.me',
+    baseURL: process.env.WEB_URL ?? 'https://web.dev.localtest.me',
+    // The laptop's local CA (make tls in the platform repo) is not in Playwright's browser store.
+    ignoreHTTPSErrors: true,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
