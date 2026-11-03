@@ -34,7 +34,8 @@ No browser header is forwarded.
 
 ## Security baseline
 
-- **Session cookie:** `WEB_SESSION`, which becomes `__Host-WEB_SESSION` + Secure behind TLS (WG.06). It is HttpOnly and SameSite=Strict, with a 15-minute idle timeout.
+- **HTTPS:** in dev since WG.06, `https://web.dev.localtest.me` uses a cert-manager certificate from the laptop's local CA (`make tls` in the platform repo; `make tls-trust` prints the command that trusts it). HTTP redirects with 301, HSTS is sent, and the BFF trusts the ingress's `X-Forwarded-Proto`.
+- **Session cookie:** `__Host-WEB_SESSION` (Secure, HttpOnly, SameSite=Strict), with a 15-minute idle timeout. It is plain `WEB_SESSION` only where TLS is off.
 - **CSRF:** cookie-to-header for every write.
 - **CSP:** `default-src 'self'`, `frame-ancestors 'none'`, `form-action 'self'`. Referrer-Policy `no-referrer`.
 - **Network:** Traefik in; out only to the gateway, Keycloak, its own stores and DNS (NetworkPolicy).
