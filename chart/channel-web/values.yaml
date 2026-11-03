@@ -1,0 +1,31 @@
+environment: dev
+image:
+  repository: channel-web/channel-web
+  tag: local
+  pullPolicy: IfNotPresent
+replicas: 1
+host: web.dev.localtest.me
+ingressClassName: traefik
+gateway:
+  url: http://api-gateway.envoy-gateway-system.svc.cluster.local
+  apiHost: api.dev.localtest.me
+iam:
+  tokenUri: http://keycloak.iam.svc.cluster.local:8080/realms/cards/protocol/openid-connect/token
+secureCookies: false     # true once the ingress serves TLS (WG.06)
+# Secret with keys client-secret, customer-key-secret, draft-key, db-password (make secrets ENV=<env>).
+secretName: channel-web-secrets
+javaOpts: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -Xss512k"
+resources:
+  requests: { cpu: 50m, memory: 320Mi }
+  limits: { memory: 448Mi }
+postgres:
+  image: postgres:16-alpine
+  storage: 1Gi
+  resources:
+    requests: { cpu: 20m, memory: 48Mi }
+    limits: { memory: 160Mi }
+redis:
+  image: redis:7-alpine
+  resources:
+    requests: { cpu: 10m, memory: 16Mi }
+    limits: { memory: 64Mi }

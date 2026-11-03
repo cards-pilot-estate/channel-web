@@ -1,0 +1,61 @@
+spring:
+  application:
+    name: channel-web
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/channel_web}
+    username: ${DB_USERNAME:channel_web}
+    password: ${DB_PASSWORD:channel_web}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  session:
+    timeout: 15m                 # idle timeout (HMRC pattern: warning at 13 minutes in the SPA)
+    redis:
+      namespace: cw:session
+  security:
+    oauth2:
+      client:
+        registration:
+          gateway:
+            provider: cards
+            client-id: ${CHANNEL_CLIENT_ID:channel-web-local}
+            client-secret: ${CHANNEL_CLIENT_SECRET:local}
+            authorization-grant-type: client_credentials
+        provider:
+          cards:
+            token-uri: ${IAM_TOKEN_URI:http://iam.localtest.me/realms/cards/protocol/openid-connect/token}
+server:
+  shutdown: graceful
+  servlet:
+    session:
+      cookie:
+        http-only: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+app:
+  channel:
+    gateway-url: ${GATEWAY_URL:http://api-gateway.envoy-gateway-system.svc.cluster.local}
+    api-host: ${API_HOST:api.dev.localtest.me}
+    client-id: ${CHANNEL_CLIENT_ID:channel-web-local}
+    channel-id: WEB
+    customer-key-secret: ${CUSTOMER_KEY_SECRET:local-customer-key-secret-not-for-real-use}
+    draft-key: ${DRAFT_KEY:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+    secure-cookies: ${SECURE_COOKIES:false}
+    notice-version: PN-2026.1
+    mitc-version: MITC-2026.1
+    brand: Ondaro Bank       # fictional placeholder (R22)
+    draft-retention: 30d
+    step-up-validity: 5m
+    poll-schedule: [3, 5, 10, 30]
+    poll-max-seconds: 120

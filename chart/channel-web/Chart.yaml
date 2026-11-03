@@ -1,0 +1,6 @@
+apiVersion: v2
+name: channel-web
+description: Web self-service channel (customer BFF and SPA) with its own Postgres and Redis
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

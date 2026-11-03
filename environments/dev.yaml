@@ -1,0 +1,4 @@
+environment: dev
+host: web.dev.localtest.me
+gateway:
+  apiHost: api.dev.localtest.me
