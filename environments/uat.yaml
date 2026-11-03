@@ -1,0 +1,5 @@
+environment: uat
+host: web.uat.localtest.me
+replicas: 2
+gateway:
+  apiHost: api.uat.localtest.me

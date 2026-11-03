@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: channel-web
+  labels: { app.kubernetes.io/name: channel-web, app.kubernetes.io/part-of: channel-web }
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: { app.kubernetes.io/name: channel-web }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: channel-web, app.kubernetes.io/part-of: channel-web }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: /actuator/prometheus
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: channel-web
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - { name: DB_URL, value: "jdbc:postgresql://channel-web-db:5432/channel_web" }
+            - { name: DB_USERNAME, value: channel_web }
+            - name: DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: db-password } }
+            - { name: REDIS_HOST, value: channel-web-redis }
+            - { name: GATEWAY_URL, value: {{ .Values.gateway.url | quote }} }
+            - { name: API_HOST, value: {{ .Values.gateway.apiHost | quote }} }
+            - { name: IAM_TOKEN_URI, value: {{ .Values.iam.tokenUri | quote }} }
+            - { name: CHANNEL_CLIENT_ID, value: "channel-web-{{ .Values.environment }}" }
+            - name: CHANNEL_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: client-secret } }
+            - name: CUSTOMER_KEY_SECRET
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: customer-key-secret } }
+            - name: DRAFT_KEY
+              valueFrom: { secretKeyRef: { name: {{ .Values.secretName }}, key: draft-key } }
+            - { name: SECURE_COOKIES, value: {{ .Values.secureCookies | quote }} }
+            - { name: JAVA_OPTS, value: {{ .Values.javaOpts | quote }} }
+          ports:
+            - { name: http, containerPort: 8080 }
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 3
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 20
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: channel-web
+spec:
+  selector: { app.kubernetes.io/name: channel-web }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: channel-web
+spec:
+  ingressClassName: {{ .Values.ingressClassName }}
+  rules:
+    - host: {{ .Values.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: channel-web, port: { name: http } } }
+---
+# Customers reach the BFF only through Traefik; it reaches only the gateway, its stores, Keycloak and DNS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: channel-web
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: channel-web }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: observability } }
+      ports:
+        - { port: 8080 }
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: envoy-gateway-system } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: iam } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: channel-web-db } }
+        - podSelector: { matchLabels: { app.kubernetes.io/name: channel-web-redis } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: observability } }
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
