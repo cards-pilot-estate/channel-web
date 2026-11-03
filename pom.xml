@@ -78,6 +78,8 @@
                         <configuration><arguments>ci --no-audit --no-fund</arguments></configuration></execution>
                     <execution><id>npm-build</id><goals><goal>npm</goal></goals><phase>generate-resources</phase>
                         <configuration><arguments>run build</arguments></configuration></execution>
+                    <execution><id>npm-test</id><goals><goal>npm</goal></goals><phase>test</phase>
+                        <configuration><arguments>test</arguments></configuration></execution>
                 </executions>
             </plugin>
         </plugins>

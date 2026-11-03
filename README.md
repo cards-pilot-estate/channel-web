@@ -49,4 +49,32 @@ make deploy ENV=dev       # secrets if missing (client secret from iam/iam-secre
 bash scripts/journey-test.sh dev   # the live journey through Traefik, the BFF, the gateway and both backends
 ```
 
-The SPA (the customer journey pages) is WG.09; until then `/` serves a placeholder page.
+## The customer's pages (SPA)
+
+React + TypeScript, built into the BFF's jar by Maven (`frontend/`). It follows GOV.UK interaction patterns under the fictional brand:
+- one topic per page and a task list;
+- an error summary that links to each field, plus inline errors;
+- "Check your answers" before the financial commitment;
+- a confirmation page with the reference and what happens next;
+- a security-code page that allows paste, with `autocomplete=one-time-code`;
+- a 13-minute timeout warning before the 15-minute sign-out.
+
+The pages are in English and Hindi, with a catalogue parity test (`npm test`). The legal texts (privacy notice, KFS) stay English until the Hindi copy is reviewed, and the Hindi pages say so.
+
+| Path | Page |
+| --- | --- |
+| `/` | Start: what you need, eligibility |
+| `/sign-in`, `/sign-in/code` | Mobile number, then the security code |
+| `/privacy-notice` | The notice and purpose-wise consent, before any personal data (R3) |
+| `/apply`, `/apply/{card,about-you,address,work}` | Task list and the four sections |
+| `/check-answers` | Check answers, accept and apply |
+| `/submitted/{id}`, `/applications/{id}` | Reference, status polling (3/5/10/30 s, stops at 2 min), withdrawal with a step-up code |
+| `/signed-out`, `/accessibility` | Signed out (answers kept 30 days); accessibility statement |
+
+## End-to-end tests (`e2e/`)
+
+Playwright on a mobile viewport, through the real chain on the laptop cluster. Every page is checked with axe for WCAG 2.2 AA, and any violation fails the test. Personas are pinned in the bureau simulator by `sha256(PAN)` (`web-channel.md` §3.5). The code is read from otp-service's dev-only hook, as a tester reads the simulated phone.
+
+```bash
+cd e2e && npm ci && npx playwright install chromium && npx playwright test   # needs kubectl access to the cluster
+```
