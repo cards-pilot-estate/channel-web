@@ -1,0 +1,5 @@
+body { font: 16px/1.5 system-ui, sans-serif; color: #0b0c0c; margin: 0; }
+main { max-width: 42rem; margin: 0 auto; padding: 1rem; }
+.demo { background: #fff4d6; border-left: 4px solid #b58100; padding: .5rem .75rem; }
+table { border-collapse: collapse; width: 100%; } th, td { border-bottom: 1px solid #b1b4b6; padding: .5rem; text-align: left; }
+caption { text-align: left; font-weight: 700; padding: .5rem 0; }
