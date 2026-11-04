@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { accessible, freshMobile, freshPan, lastCode, pinBureau } from './helpers'
+import { accessible, freshMobile, freshPan, lastCode, newCode, pinBureau } from './helpers'
 
 type Persona = {
   id: string; scenario: string; income: string; obligation: string; status: RegExp
@@ -35,7 +35,8 @@ for (const p of PERSONAS) {
 
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Check your phone')
     await expect(page.getByText(`ending ${mobile.slice(-4)}`)).toBeVisible()
-    await page.getByLabel('Security code').fill(await lastCode(mobile))
+    const signInCode = await lastCode(mobile)
+    await page.getByLabel('Security code').fill(signInCode)
     await accessible(page, 'code')
     await page.getByRole('button', { name: 'Continue' }).click()
 
@@ -97,7 +98,8 @@ for (const p of PERSONAS) {
       await expect(terms).toContainText('499')
       await accessible(page, 'offer')
       await page.getByRole('button', { name: p.offer.answer }).click()
-      await page.getByLabel('Security code').fill(await lastCode(mobile))
+      await expect(page.getByLabel('Security code')).toBeVisible()
+      await page.getByLabel('Security code').fill(await newCode(mobile, signInCode))
       await page.getByRole('button', { name: p.offer.answer }).click()
       await expect(page.getByRole('status').filter({ hasText: p.offer.then })).toBeVisible({ timeout: 45_000 })
       await accessible(page, 'after the offer')
