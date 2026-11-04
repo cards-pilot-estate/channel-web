@@ -30,6 +30,16 @@ export async function lastCode(mobile: string): Promise<string> {
   throw new Error('no code arrived')
 }
 
+/** A code sent after `previous` (a step-up after sign-in): waits until the phone shows a different one. */
+export async function newCode(mobile: string, previous: string): Promise<string> {
+  for (let i = 0; i < 40; i++) {
+    const code = await lastCode(mobile)
+    if (code !== previous) return code
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  throw new Error('no new code arrived')
+}
+
 /** WCAG 2.2 AA automated checks on the current page: no violations allowed. */
 export async function accessible(page: Page, name: string) {
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze()
