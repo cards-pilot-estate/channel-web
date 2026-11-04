@@ -100,6 +100,17 @@ public class GatewayClient {
                 .header("X-Channel-ID", properties.channelId()).retrieve().body(JsonNode.class));
     }
 
+    /** The customer's answer to their offer (W10.04): the exact offer, and the verification behind it. */
+    public JsonNode decideOffer(String customerKey, UUID applicationId, String idempotencyKey, UUID offerId,
+                                String termsHash, String decision, String verificationRef) {
+        Map<String, Object> answer = Map.of("offerId", offerId.toString(), "termsHash", termsHash,
+                "decision", decision, "verificationRef", verificationRef);
+        return call("offer-acceptance", () -> http.post().uri("/api/v1/applications/{id}/offer-acceptance", applicationId)
+                .headers(h -> common(h, customerKey)).header("Idempotency-Key", idempotencyKey)
+                .header("X-Channel-ID", properties.channelId())
+                .contentType(MediaType.APPLICATION_JSON).body(answer).retrieve().body(JsonNode.class));
+    }
+
     public JsonNode requestErasure(String customerKey, UUID applicationId, String idempotencyKey) {
         return call("erasure", () -> http.post().uri("/api/v1/applications/{id}/erasure-requests", applicationId)
                 .headers(h -> common(h, customerKey)).header("Idempotency-Key", idempotencyKey)

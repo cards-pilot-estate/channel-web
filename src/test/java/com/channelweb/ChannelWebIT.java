@@ -334,4 +334,60 @@ class ChannelWebIT {
         assertThat(done.getResponse().getStatus()).isEqualTo(200);
         assertThat(body(done).get("customerStatus").asText()).isEqualTo("WITHDRAWN");
     }
+
+    @Test
+    void theOfferIsShownAndAnsweredOnlyAfterAFreshCodeThatTheAnswerUsesUp() throws Exception {
+        signIn();
+        UUID id = UUID.randomUUID();
+        UUID offerId = UUID.randomUUID();
+        String hash = "ab".repeat(32);
+        GW.stubFor(WireMock.post("/api/v1/applications").willReturn(aResponse().withStatus(202).withHeader("Content-Type", "application/json")
+                .withBody("{\"applicationId\":\"" + id + "\",\"applicationRef\":\"CC-2026-1105-OFFER1\"}")));
+        completeDraft("ABCPO" + String.format("%04d", ThreadLocalRandom.current().nextInt(10000)) + "Q");
+        call(post("/bff/drafts/current/submission").with(csrf()));
+        GW.stubFor(WireMock.get("/api/v1/applications/" + id + "/next-action").willReturn(okJson(
+                "{\"customerStatus\":\"OFFER_READY\",\"nextAction\":{\"type\":\"ACCEPT_OFFER\"},\"canWithdraw\":true,"
+                        + "\"decision\":\"APPROVED\",\"offer\":{\"offerId\":\"" + offerId + "\",\"productCode\":\"GOLD\","
+                        + "\"creditLimit\":240000.00,\"joiningFee\":499.00,\"annualFee\":499.00,\"monthlyRatePercent\":3.50,"
+                        + "\"annualRatePercent\":42.00,\"termsVersion\":\"TERMS-1\",\"termsHash\":\"" + hash + "\","
+                        + "\"expiresAt\":\"2026-12-05T00:00:00Z\",\"internal\":\"x\"}}")));
+
+        JsonNode shown = body(call(get("/bff/applications/" + id + "/status")));
+        assertThat(shown.get("customerStatus").asText()).isEqualTo("OFFER_READY");
+        assertThat(shown.at("/offer/creditLimit").decimalValue()).isEqualByComparingTo("240000");
+        assertThat(shown.at("/offer/termsHash").asText()).isEqualTo(hash);
+        assertThat(shown.has("decision")).as("only built fields reach the browser").isFalse();
+        assertThat(shown.at("/offer").has("internal")).isFalse();
+
+        Map<String, Object> accept = Map.of("decision", "ACCEPT", "offerId", offerId.toString(), "termsHash", hash);
+        MvcResult refused = postJson("/bff/applications/" + id + "/offer", accept);
+        assertThat(refused.getResponse().getStatus()).isEqualTo(403);
+        assertThat(body(refused).get("errorCode").asText()).isEqualTo("STEP_UP_REQUIRED");
+        assertThat(postJson("/bff/applications/" + id + "/offer", Map.of("decision", "MAYBE", "offerId", offerId.toString(),
+                "termsHash", hash)).getResponse().getStatus()).isEqualTo(400);
+        assertThat(postJson("/bff/applications/" + UUID.randomUUID() + "/offer", accept).getResponse().getStatus())
+                .as("not this customer's application").isEqualTo(404);
+
+        assertThat(call(post("/bff/auth/step-up/send").with(csrf())).getResponse().getStatus()).isEqualTo(202);
+        stubVerify("channel-web-test", "STEP_UP");
+        assertThat(postJson("/bff/auth/step-up/verify", Map.of("code", "123456")).getResponse().getStatus()).isEqualTo(200);
+        GW.stubFor(WireMock.post("/api/v1/applications/" + id + "/offer-acceptance").willReturn(okJson("{\"customerStatus\":\"IN_PROGRESS\"}")));
+        GW.stubFor(WireMock.get("/api/v1/applications/" + id + "/next-action").willReturn(okJson(
+                "{\"customerStatus\":\"IN_PROGRESS\",\"nextAction\":{\"type\":\"NONE\"},\"canWithdraw\":true}")));
+        MvcResult done = postJson("/bff/applications/" + id + "/offer", accept);
+        assertThat(done.getResponse().getStatus()).isEqualTo(200);
+        assertThat(body(done).get("customerStatus").asText()).isEqualTo("IN_PROGRESS");
+
+        List<LoggedRequest> answers = GW.findAll(postRequestedFor(urlEqualTo("/api/v1/applications/" + id + "/offer-acceptance")));
+        assertThat(answers).hasSize(1);
+        JsonNode sent = json.readTree(answers.get(0).getBodyAsString());
+        assertThat(sent.get("offerId").asText()).isEqualTo(offerId.toString());
+        assertThat(sent.get("termsHash").asText()).isEqualTo(hash);
+        assertThat(sent.get("decision").asText()).isEqualTo("ACCEPT");
+        assertThat(sent.get("verificationRef").asText()).isNotBlank().isNotEqualTo("step-up");
+        assertThat(answers.get(0).getHeader("Idempotency-Key")).isEqualTo("cw-offer-" + id);
+
+        assertThat(postJson("/bff/applications/" + id + "/offer", accept).getResponse().getStatus())
+                .as("the code was used up by the first answer").isEqualTo(403);
+    }
 }

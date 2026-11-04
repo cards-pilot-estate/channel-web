@@ -16,6 +16,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Clock;
@@ -36,8 +37,13 @@ import java.util.UUID;
 public class ApplicationsController {
 
     private static final Logger log = LoggerFactory.getLogger(ApplicationsController.class);
-    private static final Set<String> KNOWN = Set.of("SUBMITTED", "IN_PROGRESS", "UNDER_REVIEW", "APPROVED",
-            "DECLINED", "WITHDRAWN", "CLOSED");
+    private static final Set<String> KNOWN = Set.of("SUBMITTED", "IN_PROGRESS", "UNDER_REVIEW", "OFFER_READY",
+            "APPROVED", "DECLINED", "WITHDRAWN", "CLOSED");
+    private static final Set<String> ANSWERS = Set.of("ACCEPT", "DECLINE");
+    private static final java.util.regex.Pattern HASH = java.util.regex.Pattern.compile("^[0-9a-f]{64}$");
+
+    /** The customer's answer to their offer: which offer they saw and what they chose. */
+    public record OfferAnswer(String decision, String offerId, String termsHash) { }
 
     private record Owned(UUID applicationId, String applicationRef, String product, Instant createdAt) { }
 
@@ -105,6 +111,43 @@ public class ApplicationsController {
         return status(customer, o);
     }
 
+    /**
+     * The customer's answer to their offer (W10.04). Needs a fresh step-up code, which the answer
+     * uses up: one code authorises exactly one answer. The platform checks the offer id and terms
+     * hash against the offer it holds and books only after an acceptance.
+     */
+    @PostMapping("/bff/applications/{applicationId}/offer")
+    public Map<String, Object> answerOffer(@PathVariable String applicationId, @RequestBody OfferAnswer answer,
+                                           HttpServletRequest request) {
+        String customer = CustomerSession.customerKey();
+        Owned o = own(customer, applicationId);
+        UUID offerId;
+        try {
+            offerId = UUID.fromString(String.valueOf(answer.offerId()));
+        } catch (IllegalArgumentException e) {
+            throw new ChannelException(400, "VALIDATION_FAILED");
+        }
+        if (!ANSWERS.contains(answer.decision()) || answer.termsHash() == null || !HASH.matcher(answer.termsHash()).matches()) {
+            throw new ChannelException(400, "VALIDATION_FAILED");
+        }
+        requireStepUp(request);
+        Object ref = request.getSession(false).getAttribute(CustomerSession.STEP_UP_REF);
+        try {
+            gateway.decideOffer(customer, o.applicationId(), "cw-offer-" + o.applicationId(), offerId,
+                    answer.termsHash(), answer.decision(), ref instanceof String r ? r : "step-up");
+        } catch (UpstreamException e) {
+            if ("OFFER_REFUSED".equals(e.errorCode())) {
+                meters.counter("cw.offer", "result", "refused").increment();
+                throw new ChannelException(409, "OFFER_REFUSED");
+            }
+            throw unavailable(e);
+        }
+        request.getSession(false).removeAttribute(CustomerSession.STEP_UP_AT);
+        request.getSession(false).removeAttribute(CustomerSession.STEP_UP_REF);
+        meters.counter("cw.offer", "result", answer.decision().toLowerCase()).increment();
+        return status(customer, o);
+    }
+
     @PostMapping("/bff/applications/{applicationId}/erasure-request")
     public ResponseEntity<Map<String, Object>> erasure(@PathVariable String applicationId, HttpServletRequest request) {
         String customer = CustomerSession.customerKey();
@@ -137,6 +180,18 @@ public class ApplicationsController {
         body.put("nextAction", view.path("nextAction").path("type").asText("NONE"));
         body.put("canWithdraw", view.path("canWithdraw").asBoolean(false));
         body.put("updatedAt", view.path("updatedAt").asText());
+        JsonNode offer = view.path("offer");
+        if ("ACCEPT_OFFER".equals(body.get("nextAction")) && offer.isObject()) {
+            // Built field by field: the customer-facing terms only, never the upstream body.
+            Map<String, Object> terms = new LinkedHashMap<>();
+            for (String f : List.of("offerId", "productCode", "termsVersion", "termsHash", "expiresAt")) {
+                terms.put(f, offer.path(f).asText());
+            }
+            for (String f : List.of("creditLimit", "joiningFee", "annualFee", "monthlyRatePercent", "annualRatePercent")) {
+                terms.put(f, offer.path(f).decimalValue());
+            }
+            body.put("offer", terms);
+        }
         body.put("checkedAt", clock.instant());
         return body;
     }

@@ -1,11 +1,18 @@
 import { expect, test } from '@playwright/test'
 import { accessible, freshMobile, freshPan, lastCode, pinBureau } from './helpers'
 
-type Persona = { id: string; scenario: string; income: string; obligation: string; status: RegExp }
+type Persona = {
+  id: string; scenario: string; income: string; obligation: string; status: RegExp
+  /** W10.04: the customer's answer to the offer, and the status it leads to. */
+  offer?: { answer: 'Accept this offer' | 'Decline this offer'; limit: string; then: RegExp }
+}
 
 // docs/channels/web-channel.md §3.5.2
 const PERSONAS: Persona[] = [
-  { id: 'P01 approval', scenario: 'HIGH_VALUE', income: '150000', obligation: '10000', status: /Approved/ },
+  { id: 'P01 approval', scenario: 'HIGH_VALUE', income: '150000', obligation: '10000', status: /Offer ready/,
+    offer: { answer: 'Accept this offer', limit: '3,00,000', then: /Approved/ } },
+  { id: 'P01b approval, offer declined', scenario: 'HIGH_VALUE', income: '150000', obligation: '10000', status: /Offer ready/,
+    offer: { answer: 'Decline this offer', limit: '3,00,000', then: /Closed/ } },
   { id: 'P03 decline on debt-to-income', scenario: 'HIGH_VALUE', income: '100000', obligation: '60000', status: /Declined/ },
   { id: 'P05 thin-file referral', scenario: 'THIN_FILE', income: '150000', obligation: '10000', status: /Under review/ },
 ]
@@ -82,6 +89,19 @@ for (const p of PERSONAS) {
     await expect(page.locator('.panel-ref')).toHaveText(/^CC-\d{4}-\d{4}-[A-Z0-9]{6}$/)
     await expect(page.getByRole('status').filter({ hasText: p.status })).toBeVisible({ timeout: 45_000 })
     await accessible(page, 'confirmation')
+
+    if (p.offer) {
+      const terms = page.getByTestId('offer-terms')
+      await expect(terms).toContainText(p.offer.limit)
+      await expect(terms).toContainText('Gold')
+      await expect(terms).toContainText('499')
+      await accessible(page, 'offer')
+      await page.getByRole('button', { name: p.offer.answer }).click()
+      await page.getByLabel('Security code').fill(await lastCode(mobile))
+      await page.getByRole('button', { name: p.offer.answer }).click()
+      await expect(page.getByRole('status').filter({ hasText: p.offer.then })).toBeVisible({ timeout: 45_000 })
+      await accessible(page, 'after the offer')
+    }
   })
 }
 

@@ -19,6 +19,8 @@ public class CustomerSession {
 
     public static final String MOBILE = "customer.mobile";
     public static final String STEP_UP_AT = "customer.stepUpAt";
+    /** The step-up proof's id: the verification reference recorded with an offer answer (W10.04). */
+    public static final String STEP_UP_REF = "customer.stepUpRef";
 
     private final SecurityContextRepository contexts;
 

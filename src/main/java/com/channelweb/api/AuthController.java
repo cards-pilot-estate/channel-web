@@ -47,6 +47,9 @@ public class AuthController {
 
     public record CodeRequest(String code) { }
 
+    /** A verified code: the pending challenge and the proof's id (jti). */
+    private record Finished(Pending pending, String proofId) { }
+
     private final GatewayClient gateway;
     private final ProofVerifier proofs;
     private final CustomerKeys keys;
@@ -82,7 +85,7 @@ public class AuthController {
 
     @PostMapping("/bff/auth/otp/verify")
     public Map<String, Object> verify(@RequestBody CodeRequest body, HttpServletRequest request, HttpServletResponse response) {
-        Pending p = finish("SIGN_IN", body.code(), request.getSession(false));
+        Pending p = finish("SIGN_IN", body.code(), request.getSession(false)).pending();
         sessions.signIn(p.customerKey(), p.mobile(), request, response);
         meters.counter("cw.signin", "result", "verified").increment();
         return Map.of("next", "/apply");
@@ -97,12 +100,14 @@ public class AuthController {
     @PostMapping("/bff/auth/step-up/verify")
     public Map<String, Object> stepUpVerify(@RequestBody CodeRequest body, HttpServletRequest request) {
         HttpSession session = request.getSession(false);
-        Pending p = finish("STEP_UP", body.code(), session);
+        Finished f = finish("STEP_UP", body.code(), session);
+        Pending p = f.pending();
         if (!p.customerKey().equals(CustomerSession.customerKey())) {
             throw new ChannelException(403, "STEP_UP_MISMATCH");
         }
         request.changeSessionId();
         request.getSession().setAttribute(CustomerSession.STEP_UP_AT, clock.millis());
+        request.getSession().setAttribute(CustomerSession.STEP_UP_REF, f.proofId());
         return Map.of("verified", true);
     }
 
@@ -129,7 +134,7 @@ public class AuthController {
     }
 
     @SuppressWarnings("unchecked")
-    private Pending finish(String purpose, String code, HttpSession session) {
+    private Finished finish(String purpose, String code, HttpSession session) {
         Pending p = session == null ? null : (Pending) session.getAttribute(PENDING);
         if (p == null || !p.purpose().equals(purpose)) {
             throw new ChannelException(409, "NO_PENDING_CODE");
@@ -145,7 +150,7 @@ public class AuthController {
         session.setAttribute(USED_PROOFS, next);
         session.removeAttribute(PENDING);
         session.removeAttribute(SENDS);
-        return p;
+        return new Finished(p, jti);
     }
 
     private static Map<String, Object> view(JsonNode challenge, String mobile) {
