@@ -23,7 +23,11 @@ code() { tail -1 <<<"$1"; }
 field() { sed '$d' <<<"$1" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d$2)" 2>/dev/null; }
 
 kubectl -n "comms-$ENV" port-forward svc/otp-service 18092:8080 >/dev/null 2>&1 & PF=$!
+kubectl -n "cards-$ENV" port-forward svc/bank-simulators 18093:8081 >/dev/null 2>&1 & PF="$PF $!"
 sleep 2
+# Persona pin (P01, approval): the bureau simulator answers HIGH_VALUE for this PAN.
+PAN_HASH=$(printf '%s' "$PAN" | shasum -a 256 | cut -d' ' -f1)
+curl -s -o /dev/null -X POST "http://127.0.0.1:18093/api/v1/bureau/admin/scenarios/$PAN_HASH?scenario=HIGH_VALUE"
 
 R=$(req GET /bff/session); check "the session starts anonymous" 200 "$(code "$R")"
 check "the page is served" 200 "$(curl -s "${CURL_TLS[@]}" -o /dev/null -w '%{http_code}' "$WEB/")"
@@ -46,12 +50,22 @@ for s in "about-you|{\"fullName\":\"Journey Test\",\"pan\":\"$PAN\",\"dateOfBirt
 done
 R=$(req POST /bff/drafts/current/submission); check "the application is submitted through the gateway" 202 "$(code "$R")"
 APP=$(field "$R" "['applicationId']"); echo "      reference $(field "$R" "['applicationRef']")"
-STATUS=""; for wait in 3 5 10 30; do
+poll() { STATUS=""; for wait in 3 5 10 30; do
   sleep "$wait"; R=$(req GET "/bff/applications/$APP/status"); STATUS=$(field "$R" "['customerStatus']")
-  case "$STATUS" in APPROVED|DECLINED|UNDER_REVIEW|CLOSED) break ;; esac
-done
-outcome() { case "$1" in APPROVED|DECLINED|UNDER_REVIEW|CLOSED) echo yes ;; *) echo "${1:-none}" ;; esac; }
-check "the status reaches an outcome the customer can act on" yes "$(outcome "$STATUS")"
+  case "$STATUS" in APPROVED|DECLINED|UNDER_REVIEW|CLOSED|OFFER_READY) break ;; esac
+done; }
+poll
+check "the approved persona gets an offer to accept (W10.04)" OFFER_READY "$STATUS"
+OFFER_ID=$(field "$R" "['offer']['offerId']"); TERMS=$(field "$R" "['offer']['termsHash']")
+echo "      offer: limit $(field "$R" "['offer']['creditLimit']"), annual fee $(field "$R" "['offer']['annualFee']")"
+ANSWER="{\"decision\":\"ACCEPT\",\"offerId\":\"$OFFER_ID\",\"termsHash\":\"$TERMS\"}"
+R=$(req POST "/bff/applications/$APP/offer" "$ANSWER"); check "an answer without a fresh code is refused" 403 "$(code "$R")"
+R=$(req POST /bff/auth/step-up/send); check "a step-up code is sent" 202 "$(code "$R")"
+OTP=$(curl -s "http://127.0.0.1:18092/sim-admin/v1/test/last-code?msisdn=%2B91$MOBILE" | python3 -c 'import sys,json; print(json.load(sys.stdin)["code"])')
+R=$(req POST /bff/auth/step-up/verify "{\"code\":\"$OTP\"}"); check "the step-up code is verified" 200 "$(code "$R")"
+R=$(req POST "/bff/applications/$APP/offer" "$ANSWER"); check "the customer accepts the exact offer" 200 "$(code "$R")"
+poll
+check "the accepted offer is booked" APPROVED "$STATUS"
 echo "      customer status: $STATUS"
 R=$(req GET /bff/applications); check "the application is listed for its owner" 1 "$(field "$R" "['applications'].__len__()")"
 

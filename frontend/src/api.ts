@@ -62,12 +62,26 @@ export type Draft = {
   expiresAt: string
 }
 
+export type Offer = {
+  offerId: string
+  productCode: string
+  creditLimit: number
+  joiningFee: number
+  annualFee: number
+  monthlyRatePercent: number
+  annualRatePercent: number
+  termsVersion: string
+  termsHash: string
+  expiresAt: string
+}
+
 export type Status = {
   applicationRef: string
-  customerStatus: 'SUBMITTED' | 'IN_PROGRESS' | 'UNDER_REVIEW' | 'APPROVED' | 'DECLINED' | 'WITHDRAWN' | 'CLOSED'
+  customerStatus: 'SUBMITTED' | 'IN_PROGRESS' | 'UNDER_REVIEW' | 'OFFER_READY' | 'APPROVED' | 'DECLINED' | 'WITHDRAWN' | 'CLOSED'
   nextAction: string
   canWithdraw: boolean
   updatedAt: string
+  offer?: Offer
 }
 
 export type Card = { code: string; name: string; joiningFee: number; annualFee: number; benefit: string }

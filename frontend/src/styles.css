@@ -61,7 +61,7 @@ input[type=text], input[type=tel], input[type=email] { font: inherit; font-size:
 .tag { display: inline-block; padding: .15rem .5rem; background: var(--brand); color: #fff; font-size: .85rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: .02em; }
 .tag-grey { background: #eceeef; color: #383f43; }
-.status-APPROVED { background: #005a30; } .status-DECLINED, .status-CLOSED { background: #942514; }
+.status-APPROVED, .status-OFFER_READY { background: #005a30; } .status-DECLINED, .status-CLOSED { background: #942514; }
 .status-UNDER_REVIEW, .status-IN_PROGRESS, .status-SUBMITTED { background: #1d4f91; } .status-WITHDRAWN { background: #383f43; }
 .summary-list { margin: 0 0 1.5rem; border-top: 1px solid var(--line); }
 .summary-row { display: grid; grid-template-columns: 1fr; border-bottom: 1px solid var(--line); padding: .6rem 0; }
@@ -76,3 +76,5 @@ input[type=text], input[type=tel], input[type=email] { font: inherit; font-size:
 dialog { border: 5px solid var(--ink); max-width: 30rem; padding: 1.5rem; }
 dialog::backdrop { background: rgba(11, 12, 12, .6); }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.button-group { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin: 1rem 0; }
